@@ -5,21 +5,29 @@ pipelines in PyTorch.
 
 ## Current scope
 
-- Synthetic point-cloud generation
-- Dataset splitting
-- Point-cloud normalization
-- PointNet classification
-- Training and evaluation
-- Robustness experiments
+* Synthetic point-cloud generation
+* ModelNet10 surface-point sampling
+* Stratified dataset splitting
+* Point-cloud normalization
+* PointNet classification
+* Shared PyTorch training and evaluation pipeline
+* Per-class accuracy and confusion-matrix analysis
+* Rotation and jitter robustness experiments
+
+## Completed milestones
+
+1. Synthetic shape classification with PointNet
+2. ModelNet10 classification with 512 sampled surface points
+3. Baseline versus rotation-and-jitter augmented training
+4. Robustness and class-wise evaluation
 
 ## Planned progression
 
-1. ModelNet10 classification
-2. PointNet++ and local neighborhoods
-3. Point-cloud segmentation
-4. LiDAR coordinate geometry
-5. PointPillars detection
-6. Camera–LiDAR fusion
+1. PointNet++ fundamentals and local neighborhoods
+2. Point-cloud segmentation
+3. LiDAR coordinate geometry
+4. PointPillars detection
+5. Camera–LiDAR fusion
 
 ## Initial synthetic baseline
 
