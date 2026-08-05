@@ -1,5 +1,6 @@
 from collections import defaultdict
 
+from numpy.random import permutation
 import torch
 from torch.utils.data import Dataset, Subset
 
@@ -58,3 +59,43 @@ def split(dataset: Dataset,
     val_dataset = Subset(dataset=dataset, indices=val_indices)
     test_dataset = Subset(dataset=dataset, indices=test_indices)
     return train_dataset, val_dataset, test_dataset
+
+
+# ModelNet provides official test set (use it as it is)
+def train_val_split(dataset: Dataset,
+                    train_fraction: float = 0.85,
+                    seed: int | None = None) -> tuple[Subset, Subset]:
+    if not 0.0 < train_fraction < 1.0:
+        raise ValueError("train_fraction must be between 0 and 1")
+
+    indices_by_class = defaultdict(list)
+    for index in range(len(dataset)):
+        if hasattr(dataset, "get_label"):
+            label = dataset.get_label(index)
+        else:
+            _, label_tensor = dataset[index]
+            label = int(label_tensor.item())
+        indices_by_class[label].append(index)
+
+    # randomness
+    if seed is not None:
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+    else:
+        generator = None
+
+    train_indices = []
+    val_indices = []
+
+    for class_label in indices_by_class.keys():
+        N = len(indices_by_class[class_label])
+        permutation = torch.randperm(N, generator=generator)
+        random_indices = [indices_by_class[class_label][i] for i in permutation]
+        N_train = int(train_fraction * N)
+        N_val = N - N_train
+        train_indices.extend(random_indices[:N_train]) # (N_train,)
+        val_indices.extend(random_indices[:N_val]) # (N_val,)
+
+    train_data = Subset(dataset=dataset, indices=train_indices)
+    val_data = Subset(dataset=dataset, indices=val_indices)
+    return train_data, val_data

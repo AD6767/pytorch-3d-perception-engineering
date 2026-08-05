@@ -31,3 +31,27 @@ The minimal PointNet reached 100% test accuracy on the balanced sphere/cube/cyli
 |---|---:|---:|---:|
 | Baseline | 73.33% | 71.11% | 100.00% |
 | Rotation augmented | 93.33% | 93.33% | 91.11% |
+
+## ModelNet10 PointNet baseline
+
+A minimal PointNet classifier was trained on ModelNet10 using 512 surface points per object. The pipeline uses the official training and test splits, a stratified validation split, unit-radius normalization, best-validation checkpointing, and class-wise evaluation.
+
+### Results
+
+| Model                                  | Clean test accuracy | Rotate + jitter accuracy |
+| -------------------------------------- | ------------------: | -----------------------: |
+| Baseline PointNet                      |              87.67% |                   40.64% |
+| Rotation-and-jitter augmented PointNet |              80.18% |                   79.30% |
+
+The baseline performs well on canonically aligned ModelNet10 objects but degrades substantially under random Z-axis rotation and coordinate jitter. Training-time augmentation improves corrupted-test accuracy by 38.66 percentage points and reduces the clean-to-corrupted robustness gap to less than one percentage point.
+
+The result also demonstrates a trade-off: robustness augmentation reduces clean aligned-test accuracy by 7.49 percentage points.
+
+Common class confusions include:
+
+* Desk and table
+* Dresser and nightstand
+* Bathtub and bed
+
+These categories have similar normalized geometry, highlighting the limitations of global PointNet features and the removal of absolute scale during preprocessing.
+

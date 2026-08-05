@@ -17,6 +17,11 @@ def normalize_point_cloud(points: torch.Tensor) -> torch.Tensor:
     max_dist = torch.linalg.norm(points, dim=1).max() # (1,)
     return points / torch.clamp(max_dist, min=1e-8)
 
+def rotate_z_and_jitter(points: torch.Tensor) -> torch.Tensor:
+    points = random_rotate_z(points)
+    points = jitter_point_cloud(points, sigma=0.10)
+    return points
+
 def normalize_and_rotate_z_and_jitter(points: torch.Tensor) -> torch.Tensor:
     points = normalize_point_cloud(points)
     points = random_rotate_z(points)
