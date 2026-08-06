@@ -1,13 +1,10 @@
 import torch
 
 from src.models.pointnet2_ops import (
-    index_points,
-    pairwise_squared_distance,
-)
-from src.models.pointnet2_ops import (
     farthest_point_sample,
     index_points,
     pairwise_squared_distance,
+    query_ball_point,
 )
 
 
@@ -218,6 +215,131 @@ def test_index_farthest_sampled_points() -> None:
     )
     assert sampled_points.shape == (2, 4, 3)
 
+def test_query_ball_point_on_line() -> None:
+    points = torch.tensor(
+        [
+            [
+                [0.0],
+                [1.0],
+                [2.0],
+                [3.0],
+                [4.0],
+            ]
+        ]
+    )
+    centers = torch.tensor(
+        [
+            [
+                [2.0],
+            ]
+        ]
+    )
+    indices = query_ball_point(
+        points=points,
+        centers=centers,
+        radius=1.1,
+        max_neighbors=3,
+    )
+    assert indices.shape == (1, 1, 3)
+    selected_indices = set(indices[0, 0].tolist())
+    assert selected_indices == {1, 2, 3}
+
+def test_query_ball_point_pads_missing_neighbors() -> None:
+    points = torch.tensor(
+        [
+            [
+                [0.0],
+                [2.0],
+                [5.0],
+            ]
+        ]
+    )
+    centers = torch.tensor(
+        [
+            [
+                [0.0],
+            ]
+        ]
+    )
+    indices = query_ball_point(
+        points=points,
+        centers=centers,
+        radius=0.5,
+        max_neighbors=3,
+    )
+    expected = torch.tensor(
+        [
+            [
+                [0, 0, 0],
+            ]
+        ],
+        dtype=torch.long,
+    )
+    assert torch.equal(indices, expected)
+
+def test_fps_and_ball_query_integration() -> None:
+    points = torch.randn(2, 32, 3)
+
+    center_indices = farthest_point_sample(
+        points,
+        num_samples=4,
+    )
+
+    centers = index_points(
+        points,
+        center_indices,
+    )
+
+    neighbor_indices = query_ball_point(
+        points=points,
+        centers=centers,
+        radius=0.5,
+        max_neighbors=8,
+    )
+
+    grouped_points = index_points(
+        points,
+        neighbor_indices,
+    )
+
+    assert center_indices.shape == (2, 4)
+    assert centers.shape == (2, 4, 3)
+    assert neighbor_indices.shape == (2, 4, 8)
+    assert grouped_points.shape == (2, 4, 8, 3)
+
+def test_grouped_points_can_be_centered_locally() -> None:
+    points = torch.randn(2, 32, 3)
+
+    center_indices = farthest_point_sample(
+        points,
+        num_samples=4,
+    )
+
+    centers = index_points(
+        points,
+        center_indices,
+    )
+
+    neighbor_indices = query_ball_point(
+        points=points,
+        centers=centers,
+        radius=0.5,
+        max_neighbors=8,
+    )
+
+    grouped_points = index_points(
+        points,
+        neighbor_indices,
+    )
+
+    local_points = (
+        grouped_points
+        - centers.unsqueeze(dim=2)
+    )
+
+    assert local_points.shape == (2, 4, 8, 3)
+    assert torch.isfinite(local_points).all()
+
 if __name__ == "__main__":
     test_pairwise_squared_distance_values()
     test_pairwise_distance_to_self()
@@ -228,3 +350,8 @@ if __name__ == "__main__":
     test_farthest_point_sample_on_line()
     test_farthest_point_sample_has_unique_indices()
     test_index_farthest_sampled_points()
+    test_query_ball_point_on_line()
+    test_query_ball_point_pads_missing_neighbors()
+    test_fps_and_ball_query_integration()
+    test_grouped_points_can_be_centered_locally()
+    print("All pointnet2_ops tests passed.")
