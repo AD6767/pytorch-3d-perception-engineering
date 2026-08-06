@@ -5,6 +5,7 @@ from src.models.pointnet2_ops import (
     index_points,
     pairwise_squared_distance,
     query_ball_point,
+    sample_and_group
 )
 
 
@@ -340,6 +341,32 @@ def test_grouped_points_can_be_centered_locally() -> None:
     assert local_points.shape == (2, 4, 8, 3)
     assert torch.isfinite(local_points).all()
 
+def test_sample_and_group_coordinates_only() -> None:
+    points = torch.randn(2, 32, 3)
+    centers, grouped_features = sample_and_group(
+        points=points,
+        num_centers=4,
+        radius=0.5,
+        max_neighbors=8,
+    )
+    assert centers.shape == (2, 4, 3)
+    assert grouped_features.shape == (2, 4, 8, 3)
+    assert torch.isfinite(centers).all()
+    assert torch.isfinite(grouped_features).all()
+
+def test_sample_and_group_with_point_features() -> None:
+    points = torch.randn(2, 32, 3)
+    point_features = torch.randn(2, 32, 16)
+    centers, grouped_features = sample_and_group(
+        points=points,
+        num_centers=4,
+        radius=0.5,
+        max_neighbors=8,
+        point_features=point_features,
+    )
+    assert centers.shape == (2, 4, 3)
+    assert grouped_features.shape == (2, 4, 8, 19)
+
 if __name__ == "__main__":
     test_pairwise_squared_distance_values()
     test_pairwise_distance_to_self()
@@ -354,4 +381,6 @@ if __name__ == "__main__":
     test_query_ball_point_pads_missing_neighbors()
     test_fps_and_ball_query_integration()
     test_grouped_points_can_be_centered_locally()
+    test_sample_and_group_coordinates_only()
+    test_sample_and_group_with_point_features()
     print("All pointnet2_ops tests passed.")

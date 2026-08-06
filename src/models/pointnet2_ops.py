@@ -131,3 +131,56 @@ def query_ball_point(points: torch.Tensor,
     invalid_neighbors = neighbor_distances == float("inf") # (B, S, max_neighbors)
     neighbor_indices = torch.where(invalid_neighbors, nearest_indices, neighbor_indices) # (B, S, max_neighbors)
     return neighbor_indices
+
+def sample_and_group(points: torch.Tensor, 
+                     num_centers: int, 
+                     radius: float, 
+                     max_neighbors: int, 
+                     point_features: torch.Tensor | None = None) -> tuple[torch.Tensor, torch.Tensor]:
+    """Sample center points and construct local neighborhoods.
+    Args:
+        points:
+            XYZ coordinates with shape [B, N, 3].
+        num_centers:
+            Number of center points selected with FPS.
+        radius:
+            Radius used for neighborhood grouping.
+        max_neighbors:
+            Maximum number of neighbors per center.
+        point_features:
+            Optional point features with shape [B, N, D].
+    Returns:
+        centers:
+            Sampled center coordinates with shape [B, S, 3].
+        grouped_features:
+            If point_features is None:
+                local coordinates with shape [B, S, K, 3].
+            Otherwise:
+                local coordinates concatenated with point features,
+                with shape [B, S, K, 3 + D].
+    """
+    if points.ndim != 3:
+        raise ValueError("points must have shape [B, N, 3]")
+    if points.shape[-1] != 3:
+        raise ValueError("points must contain XYZ coordinates")
+    if point_features is not None:
+        if point_features.ndim != 3:
+            raise ValueError("point_features must have shape [B, N, D]")
+        if point_features.shape[:2] != points.shape[:2]:
+            raise ValueError("points and point_features must have matching batch and point dimensions")
+
+    center_indices = farthest_point_sample(points=points, num_samples=num_centers) # (B, S)
+    centers = index_points(points=points, indices=center_indices) # (B, S, 3)
+    neighbor_indices = query_ball_point(points=points, 
+                                        centers=centers, 
+                                        radius=radius, 
+                                        max_neighbors=max_neighbors) # (B, S, K)
+    grouped_points = index_points(points=points, indices=neighbor_indices) # (B, S, K, 3)
+    local_coords = grouped_points - centers.unsqueeze(dim=2) # (B, S, K, 3)
+
+    if point_features is None:
+        return centers, local_coords
+
+    grouped_point_features = index_points(points=point_features, indices=neighbor_indices) # (B, S, K, D)
+    grouped_features = torch.cat([local_coords, grouped_point_features], dim=-1) # (B, S, K, 3 + D)
+    return centers, grouped_features
