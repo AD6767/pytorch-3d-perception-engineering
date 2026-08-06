@@ -1,3 +1,4 @@
+from numpy import indices
 import torch
 
 
@@ -52,3 +53,32 @@ def index_points(points: torch.Tensor, indices: torch.Tensor) -> torch.Tensor:
     selected = torch.gather(points, dim=1, index=expanded_indices) # (B, S*K, C)
     # `*`: Take the items inside this sequence and insert them here as separate values
     return torch.reshape(selected, shape=(B, *original_index_shape, C))
+
+def farthest_point_sample(points: torch.Tensor, num_samples: int) -> torch.Tensor:
+    """Select well-spaced points using farthest-point sampling.
+    Args:
+        points: Point coordinates with shape [B, N, C].
+        num_samples: Number of points to select.
+    Returns:
+        Selected point indices with shape [B, num_samples].
+    """
+    if points.ndim != 3:
+        raise ValueError(f"points must have shape [B, N, C] {points.shape}")
+    B, N, C = points.shape
+    if not 1 <= num_samples <= N:
+        raise ValueError(f"num_samples must be between 1 and {N}")
+
+    indices = torch.zeros(size=(B, num_samples), dtype=torch.long, device=points.device) # (B, num_samples)
+    # Min Squared distance from any point to any point that has been selected
+    min_distances = torch.full(size=(B, N), fill_value=float("inf"), device=points.device) # (B, N)
+    # Use point 0 as deterministic initial point
+    farthest_indices = torch.zeros(size=(B,), dtype=torch.long, device=points.device) # (B,)
+    batch_indices = torch.arange(start=0, end=B, step=1, dtype=torch.long, device=points.device)
+    for idx in range(num_samples):
+        indices[:, idx] = farthest_indices
+        selected_points = points[batch_indices, farthest_indices] # (B, C)
+        selected_points = torch.unsqueeze(selected_points, dim=1) # (B, 1, C)
+        squared_distances = torch.sum((points - selected_points)**2, dim=-1) # (B, N)
+        min_distances = torch.minimum(min_distances, squared_distances) # (B, N,)
+        farthest_indices = torch.max(min_distances, dim=-1).indices # (B,)
+    return indices
