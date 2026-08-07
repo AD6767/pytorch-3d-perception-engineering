@@ -12,8 +12,10 @@ from torch.utils.data import DataLoader, Subset
 from src.data.modelnet import ModelNetPointCloudDataset
 from src.data.splits import train_val_split
 from src.training.engine import train_model, evaluate
-from src.models.pointnet import PointNetClassifier
 from src.data.transforms import rotate_z_and_jitter, jitter_point_cloud
+
+from src.models.pointnet import PointNetClassifier
+from src.models.pointnet2 import PointNet2Classifier
 
 def get_transform(augmentation: str | None = None) -> Callable | None:
     if augmentation is None:
@@ -25,10 +27,14 @@ def get_transform(augmentation: str | None = None) -> Callable | None:
     raise ValueError(f"Unknown augmentation: {augmentation}")
 
 
-def main(model_path: str,
+def main(model_name: str,
+         model_path: str,
          train_val_data_path: str,
          test_data_path: str,
          augmentation: str | None = None):
+    if model_name != "pointnet" and model_name != "pointnet2":
+        raise ValueError(f"Unknown model: {model_name}")
+    print(f"Model used: {model_name}")
     seed = 42
     torch.manual_seed(seed)
     device = torch.device("cpu")
@@ -62,10 +68,14 @@ def main(model_path: str,
     print("Train transform:", train_data.dataset.transform)
     print("Validation transform:", val_data.dataset.transform)
     # ----- model ------
-    model = PointNetClassifier(num_classes=10,
-                               input_dim=3,
-                               feature_dim=256,
-                               dropout=0.3)
+    if model_name == "pointnet":
+        model = PointNetClassifier(num_classes=10,
+                                input_dim=3,
+                                feature_dim=256,
+                                dropout=0.3)
+    elif model_name == "pointnet2":
+        model = PointNet2Classifier(num_classes=10,
+                                    dropout=0.3)
     model.to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(params=model.parameters(), lr=1e-3, weight_decay=1e-4)
@@ -83,7 +93,10 @@ def main(model_path: str,
                 epochs=20, 
                 model_path=model_path)
     # --------- evaluate -----------
-    model1 = PointNetClassifier(num_classes=10)
+    if model_name == "pointnet":
+        model1 = PointNetClassifier(num_classes=10)
+    elif model_name == "pointnet2":
+        model1 = PointNet2Classifier(num_classes=10)
     model1.load_state_dict(torch.load(f=model_path, map_location=device, weights_only=True))
     model1.to(device)
     criterion = nn.CrossEntropyLoss()
@@ -96,12 +109,16 @@ def main(model_path: str,
                                    criterion=criterion,
                                    dataloader=test_dataloader,
                                    device=device)
-    print(f"ModelNet_10_512 | Test loss: {test_loss:.4f} | Final Test acc: {test_acc * 100:.2f}%")
+    print(f"{model_name} | Test loss: {test_loss:.4f} | Final Test acc: {test_acc * 100:.2f}%")
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # "data/modelnet10_points_512_test"
+    parser.add_argument("--model",
+                        type=str,
+                        choices=["pointnet", "pointnet2"],
+                        default="pointnet")
     parser.add_argument("--model_path", 
                         type=str, 
                         required=True,
@@ -121,4 +138,8 @@ if __name__ == '__main__':
                         default=None,
                         help="Select augmentation for training (default=None)")
     args = parser.parse_args()
-    main(args.model_path, args.train_val_data_path, args.test_data_path, args.augmentation)
+    main(args.model, 
+         args.model_path, 
+         args.train_val_data_path, 
+         args.test_data_path, 
+         args.augmentation)

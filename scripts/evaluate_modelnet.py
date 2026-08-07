@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 
 from src.data.modelnet import ModelNetPointCloudDataset
 from src.models.pointnet import PointNetClassifier
+from src.models.pointnet2 import PointNet2Classifier
 from scripts.train_modelnet import get_transform
 
 
@@ -72,9 +73,13 @@ def evaluate_modelnet(model: nn.Module,
     print("\nConfusion matrix:")
     print(confusion_matrix)
 
-def main(model_path: str,
+def main(model_name: str,
+         model_path: str,
          data_path: str,
          augmentation: str | None = None):
+    if model_name != "pointnet" and model_name != "pointnet2":
+        raise ValueError(f"Unknown model: {model_name}")
+    print(f"Model used: {model_name}")
     device = torch.device("cpu")
     print(f"Using device: {device}")
     transform = get_transform(augmentation=augmentation)
@@ -83,7 +88,11 @@ def main(model_path: str,
     seed = 42
     torch.manual_seed(seed)
     # --------- evaluate -----------
-    model = PointNetClassifier(num_classes=10)
+    if model_name == "pointnet":
+        model = PointNetClassifier(num_classes=10)
+    elif model_name == "pointnet2":
+        model = PointNet2Classifier(num_classes=10,
+                                    dropout=0.3)
     model_path_ = Path(model_path)
     print(f"Loading checkpoint: {model_path_.resolve()}")
     model.load_state_dict(torch.load(f=model_path_, map_location=device, weights_only=True))
@@ -101,6 +110,10 @@ def main(model_path: str,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # "data/modelnet10_points_512_test"
+    parser.add_argument("--model",
+                        type=str,
+                        choices=["pointnet", "pointnet2"],
+                        default="pointnet")
     parser.add_argument("--model_path", 
                         type=str, 
                         required=True,
@@ -116,4 +129,4 @@ if __name__ == '__main__':
                         default=None,
                         help="Select augmentation for training (default=None)")
     args = parser.parse_args()
-    main(args.model_path, args.data_path, args.augmentation)
+    main(args.model, args.model_path, args.data_path, args.augmentation)
