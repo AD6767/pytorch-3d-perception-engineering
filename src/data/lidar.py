@@ -53,9 +53,9 @@ def get_bev_grid_size(x_range: tuple[float, float],
         raise ValueError("pillar dimensions must be positive")
     x_length = x_range[1] - x_range[0]
     y_length = y_range[1] - y_range[0]
-    bev_x_size = long(math.floor(x_length / pillar_size[0]))
-    bev_y_size = long(math.floor(y_length / pillar_size[1]))
-    return bev_x_size, bev_y_size
+    pillar_x = long(math.floor(x_length / pillar_size[0]))
+    pillar_y = long(math.floor(y_length / pillar_size[1]))
+    return pillar_x, pillar_y
 
 def points_to_pillar_indices(points: torch.Tensor,
                              x_range: tuple[float, float],
@@ -80,3 +80,84 @@ def points_to_pillar_indices(points: torch.Tensor,
     pillar_y = torch.floor(y / pillar_size[1]).long() # (N,)
     pillar = torch.stack([pillar_x, pillar_y], dim=1) # (N, 2)
     return pillar
+
+"""
+Flow for understanding:
+70,000 LiDAR points
+
+       ↓ filtering
+
+50,000 relevant points
+
+       ↓ pillar indexing/grouping
+
+8,000 occupied pillars
+
+       ↓ cap at T=32
+
+pillar_features:
+[8000, 32, 9]
+"""
+def create_pillars(points: torch.Tensor,
+                   pillar_indices: torch.Tensor,
+                   x_range: tuple[float, float],
+                   y_range: tuple[float, float],
+                   pillar_size: tuple[float, float],
+                   max_points_per_pillar: int = 32) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Convert LiDAR points into fixed-size pillar tensors.
+    Args:
+        points:
+            [N, 4] containing x, y, z, intensity.
+        pillar_indices:
+            [N, 2] containing [pillar_x, pillar_y].
+    Returns:
+        pillar_features:
+            [P, T, 9]
+        occupied_pillars:
+            [P, 2]
+        point_mask:
+            [P, T]
+    """
+    if points.ndim != 2 or points.shape[1] < 4:
+        raise ValueError("points must have shape [N, 4+]")
+    if pillar_indices.shape != (points.shape[0], 2):
+        raise ValueError("pillar_indices must have shape [N, 2]")
+    # Example
+    # Input: tensor([[0, 0], [0, 0], [1, 0], [1, 1]])
+    # occupied_pillars, inverse_indices: (tensor([[0, 0], [1, 0], [1, 1]]), tensor([0, 0, 1, 2]))
+    occupied_pillars, inverse_indices = torch.unique(pillar_indices,
+                                                     dim=0,
+                                                     return_inverse=True) # (P, 2)
+    P = occupied_pillars.shape[0]
+    T = max_points_per_pillar
+    pillar_features = torch.zeros(size=(P, T, 9), dtype=points.dtype, device=points.device)
+    point_mask = torch.zeros(size=(P, T), dtype=torch.bool, device=points.device)
+
+    x_size, y_size = pillar_size
+    for pillar_id in range(P):
+        # which point belongs to which pillar
+        mask = pillar_id == inverse_indices # (N,)
+        pillar_points = points[mask] # subset of the original N belonging to the current pillar
+        # Limit the number of points
+        pillar_points = pillar_points[:, :T]
+        M = pillar_points.shape[0] # (M can be max T)
+        xyz_points = pillar_points[:, :3] # (M, 3)
+        # compute mean
+        xyz_mean = torch.mean(xyz_points, dim=0, keepdim=True) # collapse rows (1, 3)
+        cluster_offset = xyz_points - xyz_mean # (M, 3)
+        pillar_x = occupied_pillars[pillar_id, 0]
+        pillar_y = occupied_pillars[pillar_id, 1]
+        pillar_center_x = x_range[0] + (pillar_x.float() + 0.5) * x_size
+        pillar_center_y = y_range[0] + (pillar_y.float() + 0.5) * y_size
+        center_offset = torch.stack(
+            [pillar_points[:, 0] - pillar_center_x, 
+             pillar_points[:, 1] - pillar_center_y], dim=1) # (M, 2)
+        features = torch.cat([
+            pillar_points[:, :4], # (M, 4)
+            cluster_offset, # (M, 3)
+            center_offset, # (M, 2)
+        ], dim=1) # (M, 9) max (T, 9)
+        pillar_features[pillar_id, :M] = features
+        point_mask[pillar_id, :M] = True
+
+    return pillar_features, occupied_pillars, point_mask
